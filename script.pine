@@ -1,0 +1,729 @@
+//@version=5
+indicator("ICT Killzones & Pivots", "ICT Killzones & Pivots", true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500)
+
+
+// ---------------------------------------- Inputs --------------------------------------------------
+var g_SETTINGS      = "Settings"
+max_days            = input.int(3, "Session Drawing Limit", 1, tooltip = "Only this many drawings will be kept on the chart, for each selected drawing type (killzone boxes, pivot lines, open lines, etc.)", group = g_SETTINGS)
+tf_limit            = input.timeframe("30", "Timeframe Limit", tooltip = "Drawings will not appear on timeframes greater than or equal to this", group = g_SETTINGS)
+gmt_tz              = input.string('GMT-4', "Timezone", options = ['GMT-12','GMT-11','GMT-10','GMT-9','GMT-8','GMT-7','GMT-6','GMT-5','GMT-4','GMT-3','GMT-2','GMT-1','GMT+0','GMT+1','GMT+2','GMT+3','GMT+4','GMT+5','GMT+6','GMT+7','GMT+8','GMT+9','GMT+10','GMT+11','GMT+12','GMT+13','GMT+14'], tooltip = "Note GMT is not adjusted to reflect Daylight Saving Time changes", group = g_SETTINGS)
+lb_size             = input.string('Normal', "Label Size", options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large', 'Huge'], group = g_SETTINGS)
+lb_color            = input.color(color.black, "Label Text Color", group = g_SETTINGS)
+use_cutoff          = input.bool(true, "Drawing Cutoff Time", inline = "CO", tooltip = "When enabled, all highs and lows will stop extending after this time", group = g_SETTINGS)
+cutoff              = input.session("1200-1201", "", inline = "CO", group = g_SETTINGS)
+
+
+var g_KZ            = "Killzones"
+show_kz             = input.bool(true, "Show Killzone Boxes", inline = "KZ", group = g_KZ)
+show_kz_text        = input.bool(true, "Display Text", inline = "KZ", group = g_KZ)
+box_transparency    = input.int(70, "Box Transparency", 0, 100, group = g_KZ)
+text_transparency   = input.int(50, "Text Transparency", 0, 100, group = g_KZ)
+
+use_asia            = input.bool(true, "", inline = "ASIA", group = g_KZ)
+asia_text           = input.string("Asia", "", inline = "ASIA", group = g_KZ)
+asia                = input.session("2000-0000", "", inline = "ASIA", group = g_KZ)
+as_color            = input.color(color.blue, "", inline = "ASIA", group = g_KZ)
+
+use_london          = input.bool(true, "", inline = "LONDON", group = g_KZ)
+london_text         = input.string("London", "", inline = "LONDON", group = g_KZ)
+london              = input.session("0200-0500", "", inline = "LONDON", group = g_KZ)
+lo_color            = input.color(color.red, "", inline = "LONDON", group = g_KZ)
+
+use_nyam            = input.bool(true, "", inline = "NYAM", group = g_KZ)
+nyam_text           = input.string("NY AM", "", inline = "NYAM", group = g_KZ)
+nyam                = input.session("0930-1100", "", inline = "NYAM", group = g_KZ)
+na_color            = input.color(#089981, "", inline = "NYAM", group = g_KZ)
+
+use_nylu            = input.bool(true, "", inline = "NYLU", group = g_KZ)
+nylu_text           = input.string("NY Lunch", "", inline = "NYLU", group = g_KZ)
+nylu                = input.session("1200-1300", "", inline = "NYLU", group = g_KZ)
+nl_color            = input.color(color.yellow, "", inline = "NYLU", group = g_KZ)
+
+use_nypm            = input.bool(true, "", inline = "NYPM", group = g_KZ)
+nypm_text           = input.string("NY PM", "", inline = "NYPM", group = g_KZ)
+nypm                = input.session("1330-1600", "", inline = "NYPM", group = g_KZ)
+np_color            = input.color(color.purple, "", inline = "NYPM", group = g_KZ)
+
+
+var g_LABELS        = "Killzone Pivots"
+show_pivots         = input.bool(true, "Show Pivots", inline = "PV", group = g_LABELS)
+show_labels         = input.bool(true, "Show Labels", inline = "PV", group = g_LABELS)
+
+ash_str             = input.string("AS.H", "Session 1 Labels", inline = "L_AS", group = g_LABELS)
+asl_str             = input.string("AS.L", "", inline = "L_AS", group = g_LABELS)
+as_alert            = input.bool(false, "Alerts", inline = "L_AS", group = g_LABELS)
+
+loh_str             = input.string("LO.H", "Session 2 Labels", inline = "L_LO", group = g_LABELS)
+lol_str             = input.string("LO.L", "", inline = "L_LO", group = g_LABELS)
+lo_alert            = input.bool(false, "Alerts", inline = "L_LO", group = g_LABELS)
+
+nah_str             = input.string("NYAM.H", "Session 3 Labels", inline = "L_NA", group = g_LABELS)
+nal_str             = input.string("NYAM.L", "", inline = "L_NA", group = g_LABELS)
+na_alert            = input.bool(false, "Alerts", inline = "L_NA", group = g_LABELS)
+
+nlh_str             = input.string("NYL.H", "Session 4 Labels", inline = "L_NL", group = g_LABELS)
+nll_str             = input.string("NYL.L", "", inline = "L_NL", group = g_LABELS)
+nl_alert            = input.bool(false, "Alerts", inline = "L_NL", group = g_LABELS)
+
+nph_str             = input.string("NYPM.H", "Session 5 Labels", inline = "L_NP", group = g_LABELS)
+npl_str             = input.string("NYPM.L", "", inline = "L_NP", group = g_LABELS)
+np_alert            = input.bool(false, "Alerts", inline = "L_NP", group = g_LABELS)
+
+s_style             = input.string(defval = 'Solid', title = "Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "L_0", group = g_LABELS)
+s_width             = input.int(1, "", inline = "L_0", group = g_LABELS)
+
+
+var g_DWM           = "DWM Open"
+dow_labels          = input.bool(true, "Day of Week Labels", inline = "DOW", group = g_DWM)
+dow_yloc            = input.string('Bottom', "", options = ['Top', 'Bottom'], inline = "DOW", group = g_DWM)
+dow_xloc            = input.string('Midnight', "", options = ['Midnight', 'Midday'], inline = "DOW", group = g_DWM)
+dow_color           = input.color(color.black, "", inline = "DOW", group = g_DWM)
+
+show_d_open         = input.bool(false, "", inline = "DO", group = g_DWM)
+d_open_str          = input.string("D.OPEN", "", inline = "DO", group = g_DWM)
+ds                  = input.bool(false, "Separators", inline = "DO", tooltip = "Mark where a new day begins. Unlimited will override the drawing limit", group = g_DWM)
+ds_unlimited        = input.bool(true, "Unlimited", inline = "DO", group = g_DWM)
+d_color             = input.color(color.blue, "", inline = "DO", group = g_DWM)
+
+show_w_open         = input.bool(false, "", inline = "WO", group = g_DWM)
+w_open_str          = input.string("W.OPEN", "", inline = "WO", group = g_DWM)
+ws                  = input.bool(false, "Separators", inline = "WO", tooltip = "Mark where a new week begins. Unlimited will override the drawing limit", group = g_DWM)
+ws_unlimited        = input.bool(true, "Unlimited", inline = "WO", group = g_DWM)
+w_color             = input.color(#089981, "", inline = "WO", group = g_DWM)
+
+show_m_open         = input.bool(false, "", inline = "MO", group = g_DWM)
+m_open_str          = input.string("M.OPEN", "", inline = "MO", group = g_DWM)
+ms                  = input.bool(false, "Separators", inline = "MO", tooltip = "Mark where a new month begins. Unlimited will override the drawing limit", group = g_DWM)
+ms_unlimited        = input.bool(true, "Unlimited", inline = "MO", group = g_DWM)
+m_color             = input.color(color.red, "", inline = "MO", group = g_DWM)
+
+dwm_style           = input.string(defval = 'Solid', title = "Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "D0", group = g_DWM)
+dwm_width           = input.int(1, "", inline = "D0", group = g_DWM)
+
+
+var g_OPEN          = "Opening Price"
+use_h1              = input.bool(true, "", inline = "H1", group = g_OPEN)
+h1_text             = input.string("True Day Open", "", inline = "H1", group = g_OPEN)
+h1                  = input.session("0000-0001", "", inline = "H1", group = g_OPEN)
+h1_color            = input.color(color.black, "", inline = "H1", group = g_OPEN)
+
+use_h2              = input.bool(false, "", inline = "H2", group = g_OPEN)
+h2_text             = input.string("06:00", "", inline = "H2", group = g_OPEN)
+h2                  = input.session("0600-0601", "", inline = "H2", group = g_OPEN)
+h2_color            = input.color(color.black, "", inline = "H2", group = g_OPEN)
+
+use_h3              = input.bool(false, "", inline = "H3", group = g_OPEN)
+h3_text             = input.string("10:00", "", inline = "H3", group = g_OPEN)
+h3                  = input.session("1000-1001", "", inline = "H3", group = g_OPEN)
+h3_color            = input.color(color.black, "", inline = "H3", group = g_OPEN)
+
+use_h4              = input.bool(false, "", inline = "H4", group = g_OPEN)
+h4_text             = input.string("14:00", "", inline = "H4", group = g_OPEN)
+h4                  = input.session("1400-1401", "", inline = "H4", group = g_OPEN)
+h4_color            = input.color(color.black, "", inline = "H4", group = g_OPEN)
+
+h_style             = input.string(defval = 'Dotted', title = "Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "H0", group = g_OPEN)
+h_width             = input.int(1, "", inline = "H0", group = g_OPEN)
+
+
+var g_VERTICAL      = "Timestamps"
+use_v1              = input.bool(false, "", inline = "V1", group = g_VERTICAL)
+v1                  = input.session("0000-0001", "", inline = "V1", group = g_VERTICAL)
+v1_color            = input.color(color.black, "", inline = "V1", group = g_VERTICAL)
+
+use_v2              = input.bool(false, "", inline = "V2", group = g_VERTICAL)
+v2                  = input.session("0800-0801", "", inline = "V2", group = g_VERTICAL)
+v2_color            = input.color(color.black, "", inline = "V2", group = g_VERTICAL)
+
+use_v3              = input.bool(false, "", inline = "V3", group = g_VERTICAL)
+v3                  = input.session("1000-1001", "", inline = "V3", group = g_VERTICAL)
+v3_color            = input.color(color.black, "", inline = "V3", group = g_VERTICAL)
+
+use_v4              = input.bool(true, "", inline = "V4", group = g_VERTICAL)
+v4                  = input.session("1200-1201", "", inline = "V4", group = g_VERTICAL)
+v4_color            = input.color(color.black, "", inline = "V4", group = g_VERTICAL)
+
+v_style             = input.string(defval = 'Dotted', title = "Style", options = ['Solid', 'Dotted', 'Dashed'], inline = "V0", group = g_VERTICAL)
+v_width             = input.int(1, "", inline = "V0", group = g_VERTICAL)
+// ---------------------------------------- Inputs --------------------------------------------------
+
+
+// ---------------------------------------- Variables & Constants --------------------------------------------------
+t_as = not na(time("", asia, gmt_tz))
+t_lo = not na(time("", london, gmt_tz))
+t_na = not na(time("", nyam, gmt_tz))
+t_nl = not na(time("", nylu, gmt_tz))
+t_np = not na(time("", nypm, gmt_tz))
+t_co = not na(time("", cutoff, gmt_tz))
+
+t_h1 = not na(time("", h1, gmt_tz))
+t_h2 = not na(time("", h2, gmt_tz))
+t_h3 = not na(time("", h3, gmt_tz))
+t_h4 = not na(time("", h4, gmt_tz))
+
+t_v1 = not na(time("", v1, gmt_tz))
+t_v2 = not na(time("", v2, gmt_tz))
+t_v3 = not na(time("", v3, gmt_tz))
+t_v4 = not na(time("", v4, gmt_tz))
+
+var as_hi_line = array.new_line()
+var as_lo_line = array.new_line()
+var lo_hi_line = array.new_line()
+var lo_lo_line = array.new_line()
+var na_hi_line = array.new_line()
+var na_lo_line = array.new_line()
+var nl_hi_line = array.new_line()
+var nl_lo_line = array.new_line()
+var np_hi_line = array.new_line()
+var np_lo_line = array.new_line()
+
+var d_sep_line = array.new_line()
+var w_sep_line = array.new_line()
+var m_sep_line = array.new_line()
+
+var d_line = array.new_line()
+var w_line = array.new_line()
+var m_line = array.new_line()
+
+var h1_line = array.new_line()
+var h2_line = array.new_line()
+var h3_line = array.new_line()
+var h4_line = array.new_line()
+
+var v1_line = array.new_line()
+var v2_line = array.new_line()
+var v3_line = array.new_line()
+var v4_line = array.new_line()
+
+var d_label = array.new_label()
+var w_label = array.new_label()
+var m_label = array.new_label()
+
+var h1_label = array.new_label()
+var h2_label = array.new_label()
+var h3_label = array.new_label()
+var h4_label = array.new_label()
+
+var as_hi_label = array.new_label()
+var as_lo_label = array.new_label()
+var lo_hi_label = array.new_label()
+var lo_lo_label = array.new_label()
+var na_hi_label = array.new_label()
+var na_lo_label = array.new_label()
+var nl_hi_label = array.new_label()
+var nl_lo_label = array.new_label()
+var np_hi_label = array.new_label()
+var np_lo_label = array.new_label()
+
+var as_box = array.new_box()
+var lo_box = array.new_box()
+var na_box = array.new_box()
+var nl_box = array.new_box()
+var np_box = array.new_box()
+
+transparent = #ffffff00
+
+d_o = request.security(syminfo.tickerid, "D", open, barmerge.gaps_off, barmerge.lookahead_on)
+w_o = request.security(syminfo.tickerid, "W", open, barmerge.gaps_off, barmerge.lookahead_on)
+m_o = request.security(syminfo.tickerid, "M", open, barmerge.gaps_off, barmerge.lookahead_on)
+// ---------------------------------------- Variables & Constants --------------------------------------------------
+
+
+// ---------------------------------------- Functions --------------------------------------------------
+get_label_size(_size) =>
+    result = switch _size
+        'Tiny' => size.tiny
+        'Small' => size.small
+        'Normal' => size.normal
+        'Large' => size.large
+        'Huge' => size.huge
+        'Auto' => size.auto
+    result
+
+get_line_type(_style) =>
+    result = switch _style
+        'Solid' => line.style_solid
+        'Dotted' => line.style_dotted
+        'Dashed' => line.style_dashed
+    result
+
+get_box_color(_color, _transparency) =>
+    result = color.new(_color, _transparency)
+    
+adjust(_hline, _lline, _hlabel, _llabel, _ulabel, _box) =>
+    _hline.set_x2(bar_index)
+    _lline.set_x2(bar_index)
+    _box.set_right(bar_index)
+
+    _top = show_kz ? _box.get_top() : _hline.get_y1()
+    _bot = show_kz ? _box.get_bottom() : _lline.get_y1()
+
+    if high > _top
+        _hline.set_xy1(bar_index, high)
+        _hline.set_y2(high)
+        _box.set_top(high)
+
+        _hlabel.set_x(bar_index)
+        _hlabel.set_y(high)
+    if low < _bot
+        _lline.set_xy1(bar_index, low)
+        _lline.set_y2(low)
+        _box.set_bottom(low)
+
+        _llabel.set_x(bar_index)
+        _llabel.set_y(low)
+
+check_high(_line) =>
+    result = false
+    broke = false
+    _line.set_x2(bar_index)
+    if high > _line.get_y1()
+        result := true
+        broke := true
+    else if  (use_cutoff ? t_co : false)
+        result := true
+    [result, broke]
+    
+check_low(_line) =>
+    result = false
+    broke = false
+    _line.set_x2(bar_index)
+    if low < _line.get_y1()
+        result := true
+        broke := true
+    else if (use_cutoff ? t_co : false)
+        result := true
+    [result, broke]
+    
+check_open(_line, _label) =>
+    result = false
+    _line.set_x2(bar_index)
+    _label.set_x(bar_index)
+    if (use_cutoff ? t_co : false)
+        result := true
+    result
+
+check_array(_arr) =>
+    if _arr.size() > max_days
+        _arr.pop().delete()
+// ---------------------------------------- Functions --------------------------------------------------
+
+
+// ---------------------------------------- Core Logic --------------------------------------------------
+s_style := get_line_type(s_style)
+dwm_style := get_line_type(dwm_style)
+h_style := get_line_type(h_style)
+v_style := get_line_type(v_style)
+
+lb_size := get_label_size(lb_size)
+
+var color as_box_color = get_box_color(as_color, box_transparency)
+var color lo_box_color = get_box_color(lo_color, box_transparency)
+var color na_box_color = get_box_color(na_color, box_transparency)
+var color nl_box_color = get_box_color(nl_color, box_transparency)
+var color np_box_color = get_box_color(np_color, box_transparency)
+
+var color as_text_color = get_box_color(as_color, text_transparency)
+var color lo_text_color = get_box_color(lo_color, text_transparency)
+var color na_text_color = get_box_color(na_color, text_transparency)
+var color nl_text_color = get_box_color(nl_color, text_transparency)
+var color np_text_color = get_box_color(np_color, text_transparency)
+
+var h1_co = false
+var h2_co = false
+var h3_co = false
+var h4_co = false
+
+var as_stop_hi = false
+var as_stop_lo = false
+
+var lo_stop_hi = false
+var lo_stop_lo = false
+
+var na_stop_hi = false
+var na_stop_lo = false
+
+var nl_stop_hi = false
+var nl_stop_lo = false
+
+var np_stop_hi = false
+var np_stop_lo = false
+
+as_broke_hi = false
+as_broke_lo = false
+
+lo_broke_hi = false
+lo_broke_lo = false
+
+na_broke_hi = false
+na_broke_lo = false
+
+nl_broke_hi = false
+nl_broke_lo = false
+
+np_broke_hi = false
+np_broke_lo = false
+
+// day_str = switch dayofweek
+
+// if dayofweek != dayofweek[1]
+//     label.new(time, high, str.tostring(dayofweek))
+
+if timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+    // Asia
+    if use_asia
+        if t_as and not t_as[1]
+            as_stop_hi := false
+            as_stop_lo := false
+
+            if show_kz
+                as_box.unshift(box.new(bar_index, high, bar_index, low, border_color = as_box_color, bgcolor = as_box_color, text = show_kz_text ? asia_text : na, text_color = as_text_color))
+
+            if show_pivots
+                as_hi_line.unshift(line.new(bar_index, high, bar_index, high, style = s_style, color = as_color, width = s_width))
+                as_lo_line.unshift(line.new(bar_index, low, bar_index, low, style = s_style, color = as_color, width = s_width))
+
+            if show_labels
+                as_hi_label.unshift(label.new(bar_index, high, ash_str, color = transparent, textcolor = lb_color, style = label.style_label_down, size = lb_size))
+                as_lo_label.unshift(label.new(bar_index, low, asl_str, color = transparent, textcolor = lb_color, style = label.style_label_up, size = lb_size))
+        else if t_as
+            adjust(show_pivots ? as_hi_line.get(0) : na, show_pivots ? as_lo_line.get(0) : na, show_labels ? as_hi_label.get(0) : na, show_labels ? as_lo_label.get(0) : na, show_labels, show_kz ? as_box.get(0) : na)
+        else if not t_as and as_hi_line.size() > 0
+            if not as_stop_hi
+                [_r, _b] = check_high(as_hi_line.get(0))
+                if _r
+                    as_stop_hi := true
+                if _b
+                    as_broke_hi := true
+                    if as_alert
+                        alert("Broke " + str.tostring(ash_str), alert.freq_once_per_bar)
+            if not as_stop_lo
+                [_r, _b] = check_low(as_lo_line.get(0))
+                if _r
+                    as_stop_lo := true
+                if _b
+                    as_broke_lo := true
+                    if as_alert
+                        alert("Broke " + str.tostring(asl_str), alert.freq_once_per_bar)
+        
+    // London
+    if use_london
+        if t_lo and not t_lo[1]
+            lo_stop_hi := false
+            lo_stop_lo := false
+
+            if show_kz
+                lo_box.unshift(box.new(bar_index, high, bar_index, low, border_color = lo_box_color, bgcolor = lo_box_color, text = show_kz_text ? london_text : na, text_color = lo_text_color))
+
+            if show_pivots
+                lo_hi_line.unshift(line.new(bar_index, high, bar_index, high, style = s_style, color = lo_color, width = s_width))
+                lo_lo_line.unshift(line.new(bar_index, low, bar_index, low, style = s_style, color = lo_color, width = s_width))
+
+            if show_labels
+                lo_hi_label.unshift(label.new(bar_index, high, loh_str, color = transparent, textcolor = lb_color, style = label.style_label_down, size = lb_size))
+                lo_lo_label.unshift(label.new(bar_index, low, lol_str, color = transparent, textcolor = lb_color, style = label.style_label_up, size = lb_size))
+        else if t_lo
+            adjust(show_pivots ? lo_hi_line.get(0) : na, show_pivots ? lo_lo_line.get(0) : na, show_labels ? lo_hi_label.get(0) : na, show_labels ? lo_lo_label.get(0) : na, show_labels, show_kz ? lo_box.get(0) : na)
+        else if not t_lo and lo_hi_line.size() > 0
+            if not lo_stop_hi
+                [_r, _b] = check_high(lo_hi_line.get(0))
+                if _r
+                    lo_stop_hi := true
+                if _b
+                    lo_broke_hi := true
+                    if lo_alert
+                        alert("Broke " + str.tostring(loh_str), alert.freq_once_per_bar)
+            if not lo_stop_lo
+                [_r, _b] = check_low(lo_lo_line.get(0))
+                if _r
+                    lo_stop_lo := true
+                if _b
+                    lo_broke_lo := true
+                    if lo_alert
+                        alert("Broke " + str.tostring(lol_str), alert.freq_once_per_bar)
+                        
+    // NY AM
+    if use_nyam
+        if t_na and not t_na[1]
+            na_stop_hi := false
+            na_stop_lo := false
+
+            if show_kz
+                na_box.unshift(box.new(bar_index, high, bar_index, low, border_color = na_box_color, bgcolor = na_box_color, text = show_kz_text ? nyam_text : na, text_color = na_text_color))
+
+            if show_pivots
+                na_hi_line.unshift(line.new(bar_index, high, bar_index, high, style = s_style, color = na_color, width = s_width))
+                na_lo_line.unshift(line.new(bar_index, low, bar_index, low, style = s_style, color = na_color, width = s_width))
+
+            if show_labels
+                na_hi_label.unshift(label.new(bar_index, high, nah_str, color = transparent, textcolor = lb_color, style = label.style_label_down, size = lb_size))
+                na_lo_label.unshift(label.new(bar_index, low, nal_str, color = transparent, textcolor = lb_color, style = label.style_label_up, size = lb_size))
+        else if t_na
+            adjust(show_pivots ? na_hi_line.get(0) : na, show_pivots ? na_lo_line.get(0) : na, show_labels ? na_hi_label.get(0) : na, show_labels ? na_lo_label.get(0) : na, show_labels, show_kz ? na_box.get(0) : na)
+        else if not t_na and na_hi_line.size() > 0
+            if not na_stop_hi
+                [_r, _b] = check_high(na_hi_line.get(0))
+                if _r
+                    na_stop_hi := true
+                if _b
+                    na_broke_hi := true
+                    if na_alert
+                        alert("Broke " + str.tostring(nah_str), alert.freq_once_per_bar)
+            if not na_stop_lo
+                [_r, _b] = check_low(na_lo_line.get(0))
+                if _r
+                    na_stop_lo := true
+                if _b
+                    na_broke_lo := true
+                    if na_alert
+                        alert("Broke " + str.tostring(nal_str), alert.freq_once_per_bar)
+                        
+    // NY Lunch
+    if use_nylu
+        if t_nl and not t_nl[1]
+            nl_stop_hi := false
+            nl_stop_lo := false
+
+            if show_kz
+                nl_box.unshift(box.new(bar_index, high, bar_index, low, border_color = nl_box_color, bgcolor = nl_box_color, text = show_kz_text ? nylu_text : na, text_color = nl_text_color))
+
+            if show_pivots
+                nl_hi_line.unshift(line.new(bar_index, high, bar_index, high, style = s_style, color = nl_color, width = s_width))
+                nl_lo_line.unshift(line.new(bar_index, low, bar_index, low, style = s_style, color = nl_color, width = s_width))
+
+            if show_labels
+                nl_hi_label.unshift(label.new(bar_index, high, nlh_str, color = transparent, textcolor = lb_color, style = label.style_label_down, size = lb_size))
+                nl_lo_label.unshift(label.new(bar_index, low, nll_str, color = transparent, textcolor = lb_color, style = label.style_label_up, size = lb_size))
+        else if t_nl
+            adjust(show_pivots ? nl_hi_line.get(0) : na, show_pivots ? nl_lo_line.get(0) : na, show_labels ? nl_hi_label.get(0) : na, show_labels ? nl_lo_label.get(0) : na, show_labels, show_kz ? nl_box.get(0) : na)
+        else if not t_nl and nl_hi_line.size() > 0
+            if not nl_stop_hi
+                [_r, _b] = check_high(nl_hi_line.get(0))
+                if _r
+                    nl_stop_hi := true
+                if _b
+                    nl_broke_hi := true
+                    if nl_alert
+                        alert("Broke " + str.tostring(nlh_str), alert.freq_once_per_bar)
+            if not nl_stop_lo
+                [_r, _b] = check_low(nl_lo_line.get(0))
+                if _r
+                    nl_stop_lo := true
+                if _b
+                    nl_broke_lo := true
+                    if nl_alert
+                        alert("Broke " + str.tostring(nll_str), alert.freq_once_per_bar)
+                        
+    // NY PM
+    if use_nypm
+        if t_np and not t_np[1]
+            np_stop_hi := false
+            np_stop_lo := false
+
+            if show_kz
+                np_box.unshift(box.new(bar_index, high, bar_index, low, border_color = np_box_color, bgcolor = np_box_color, text = show_kz_text ? nypm_text : na, text_color = np_text_color))
+
+            if show_pivots
+                np_hi_line.unshift(line.new(bar_index, high, bar_index, high, style = s_style, color = np_color, width = s_width))
+                np_lo_line.unshift(line.new(bar_index, low, bar_index, low, style = s_style, color = np_color, width = s_width))
+
+            if show_labels
+                np_hi_label.unshift(label.new(bar_index, high, nph_str, color = transparent, textcolor = lb_color, style = label.style_label_down, size = lb_size))
+                np_lo_label.unshift(label.new(bar_index, low, npl_str, color = transparent, textcolor = lb_color, style = label.style_label_up, size = lb_size))
+        else if t_np
+            adjust(show_pivots ? np_hi_line.get(0) : na, show_pivots ? np_lo_line.get(0) : na, show_labels ? np_hi_label.get(0) : na, show_labels ? np_lo_label.get(0) : na, show_labels, show_kz ? np_box.get(0) : na) 
+        else if not t_np and np_hi_line.size() > 0
+            if not np_stop_hi
+                [_r, _b] = check_high(np_hi_line.get(0))
+                if _r
+                    np_stop_hi := true
+                if _b
+                    np_broke_hi := true
+                    if np_alert
+                        alert("Broke " + str.tostring(nph_str), alert.freq_once_per_bar)
+            if not np_stop_lo
+                [_r, _b] = check_low(np_lo_line.get(0))
+                if _r
+                    np_stop_lo := true
+                if _b
+                    np_broke_lo := true
+                    if np_alert
+                        alert("Broke " + str.tostring(npl_str), alert.freq_once_per_bar)
+                
+    // Vertical Lines
+    if use_v1
+        if t_v1 and not t_v1[1]
+            v1_line.unshift(line.new(bar_index, high, bar_index, low, style = v_style, width = v_width, extend = extend.both, color = v1_color))
+    if use_v2
+        if t_v2 and not t_v2[1]
+            v2_line.unshift(line.new(bar_index, high, bar_index, low, style = v_style, width = v_width, extend = extend.both, color = v2_color))
+    if use_v3
+        if t_v3 and not t_v3[1]
+            v3_line.unshift(line.new(bar_index, high, bar_index, low, style = v_style, width = v_width, extend = extend.both, color = v3_color))
+    if use_v4
+        if t_v4 and not t_v4[1]
+            v4_line.unshift(line.new(bar_index, high, bar_index, low, style = v_style, width = v_width, extend = extend.both, color = v4_color))
+
+    // Horizontal Lines
+    if use_h1
+        if t_h1 and not t_h1[1]
+            h1_co := false
+            
+            h1_line.unshift(line.new(bar_index, open, bar_index, open, style = h_style, width = h_width, color = h1_color))
+            h1_label.unshift(label.new(bar_index, open, h1_text, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if not t_h1 and h1_line.size() > 0
+            if not h1_co
+                if not check_open(h1_line.get(0), h1_label.get(0))
+                    h1_label.get(0).set_x(bar_index)
+                else
+                    h1_co := true
+                
+    if use_h2
+        if t_h2 and not t_h2[1]
+            h2_co := false
+            
+            h2_line.unshift(line.new(bar_index, open, bar_index, open, style = h_style, width = h_width, color = h2_color))
+            h2_label.unshift(label.new(bar_index, open, h2_text, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if not t_h2 and h2_line.size() > 0
+            if not h2_co 
+                if not check_open(h2_line.get(0), h2_label.get(0))
+                    h2_label.get(0).set_x(bar_index)
+                else
+                    h2_co := true
+                
+    if use_h3
+        if t_h3 and not t_h3[1]
+            h3_co := false
+            
+            h3_line.unshift(line.new(bar_index, open, bar_index, open, style = h_style, width = h_width, color = h3_color))
+            h3_label.unshift(label.new(bar_index, open, h3_text, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if not t_h3 and h3_line.size() > 0
+            if not h3_co
+                if not check_open(h3_line.get(0), h3_label.get(0))
+                    h3_label.get(0).set_x(bar_index)
+                else
+                    h3_co := true
+                
+    if use_h4
+        if t_h4 and not t_h4[1]
+            h4_co := false
+            
+            h4_line.unshift(line.new(bar_index, open, bar_index, open, style = h_style, width = h_width, color = h4_color))
+            h4_label.unshift(label.new(bar_index, open, h4_text, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if not t_h4 and h4_line.size() > 0
+            if not h4_co
+                if not check_open(h4_line.get(0), h4_label.get(0))
+                    h4_label.get(0).set_x(bar_index)
+                else
+                    h4_co := true
+
+    // DWM - Separators
+    if ds
+        if d_o != d_o[1]
+            d_sep_line.unshift(line.new(bar_index, high, bar_index, low, style = dwm_style, width = dwm_width, extend = extend.both, color = d_color))
+    if ws
+        if w_o != w_o[1]
+            w_sep_line.unshift(line.new(bar_index, high, bar_index, low, style = dwm_style, width = dwm_width, extend = extend.both, color = w_color))
+    if ms
+        if m_o != m_o[1]
+            m_sep_line.unshift(line.new(bar_index, high, bar_index, low, style = dwm_style, width = dwm_width, extend = extend.both, color = m_color))
+
+    // DWM - Open Lines
+    if show_d_open
+        if d_o != d_o[1]
+            d_line.unshift(line.new(bar_index, d_o, bar_index, d_o, style = dwm_style, width = dwm_width, color = d_color))
+            d_label.unshift(label.new(bar_index, d_o, d_open_str, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if d_line.size() > 0
+            if not check_open(d_line.get(0), d_label.get(0))
+                d_label.get(0).set_x(bar_index)
+                
+    if show_w_open
+        if w_o != w_o[1]
+            w_line.unshift(line.new(bar_index, w_o, bar_index, w_o, style = dwm_style, width = dwm_width, color = w_color))
+            w_label.unshift(label.new(bar_index, w_o, w_open_str, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if w_line.size() > 0
+            if not check_open(w_line.get(0), w_label.get(0))
+                w_label.get(0).set_x(bar_index)
+                
+    if show_m_open
+        if m_o != m_o[1]
+            m_line.unshift(line.new(bar_index, m_o, bar_index, m_o, style = dwm_style, width = dwm_width, color = m_color))
+            m_label.unshift(label.new(bar_index, m_o, m_open_str, style = label.style_label_left, color = transparent, textcolor = lb_color, size = lb_size))
+        else if m_line.size() > 0
+            if not check_open(m_line.get(0), m_label.get(0))
+                m_label.get(0).set_x(bar_index)
+
+new_dow_time = dow_xloc == 'Midday' ? time - timeframe.in_seconds("D") / 2 * 1000 : time
+new_day = dayofweek(new_dow_time, gmt_tz) != dayofweek(new_dow_time, gmt_tz)[1]
+dow_top = dow_yloc == 'Top'
+
+monday = "MONDAY"
+tuesday = "TUESDAY"
+wednesday = "WEDNESDAY"
+thursday = "THURSDAY"
+friday = "FRIDAY"
+
+plotchar(dow_labels and timeframe.isintraday and dayofweek(new_dow_time, gmt_tz) == 2 and new_day, location = dow_top ? location.top : location.bottom, char = "", textcolor = dow_color, text = monday)
+plotchar(dow_labels and timeframe.isintraday and dayofweek(new_dow_time, gmt_tz) == 3 and new_day, location = dow_top ? location.top : location.bottom, char = "", textcolor = dow_color, text = tuesday)
+plotchar(dow_labels and timeframe.isintraday and dayofweek(new_dow_time, gmt_tz) == 4 and new_day, location = dow_top ? location.top : location.bottom, char = "", textcolor = dow_color, text = wednesday)
+plotchar(dow_labels and timeframe.isintraday and dayofweek(new_dow_time, gmt_tz) == 5 and new_day, location = dow_top ? location.top : location.bottom, char = "", textcolor = dow_color, text = thursday)
+plotchar(dow_labels and timeframe.isintraday and dayofweek(new_dow_time, gmt_tz) == 6 and new_day, location = dow_top ? location.top : location.bottom, char = "", textcolor = dow_color, text = friday)
+
+check_array(as_hi_line)
+check_array(as_lo_line)
+check_array(as_hi_label)
+check_array(as_lo_label)
+check_array(as_box)
+
+check_array(lo_hi_line)
+check_array(lo_lo_line)
+check_array(lo_hi_label)
+check_array(lo_lo_label)
+check_array(lo_box)
+
+check_array(na_hi_line)
+check_array(na_lo_line)
+check_array(na_hi_label)
+check_array(na_lo_label)
+check_array(na_box)
+
+check_array(nl_hi_line)
+check_array(nl_lo_line)
+check_array(nl_hi_label)
+check_array(nl_lo_label)
+check_array(nl_box)
+
+check_array(np_hi_line)
+check_array(np_lo_line)
+check_array(np_hi_label)
+check_array(np_lo_label)
+check_array(np_box)
+
+check_array(v1_line)
+check_array(v2_line)
+check_array(v3_line)
+check_array(v4_line)
+
+check_array(h1_line)
+check_array(h2_line)
+check_array(h3_line)
+check_array(h4_line)
+
+check_array(h1_label)
+check_array(h2_label)
+check_array(h3_label)
+check_array(h4_label)
+
+if not ds_unlimited
+    check_array(d_sep_line)
+    check_array(d_line)
+    check_array(d_label)
+if not ws_unlimited
+    check_array(w_sep_line)
+    check_array(w_line)
+    check_array(w_label)
+if not ms_unlimited
+    check_array(m_sep_line)
+    check_array(m_line)
+    check_array(m_label)
+// ---------------------------------------- Core Logic --------------------------------------------------
