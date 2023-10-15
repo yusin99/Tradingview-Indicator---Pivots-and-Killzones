@@ -1,3 +1,4 @@
+TFO indicator logic, props !!!
 # Pivots and Killzones Indicator for TradingView
 
 Welcome to the Pivots and Killzones Indicator repository for TradingView! This custom indicator is designed for traders who follow the Inner Circle Trader (ICT) methodology, combining ICT killzones and pivot points to identify potential liquidity levels and enhance trading decisions.
